@@ -1,14 +1,31 @@
 import * as React from 'react'
-import { from, Subject } from 'rxjs'
 import axios from 'axios'
+import { from, of, Subject } from 'rxjs/index'
 import { debounceTime, distinctUntilChanged, filter, map, mergeMap } from 'rxjs/internal/operators'
 
 interface Props {
   name: string
 }
 
-class Search extends React.Component<Props> {
-  event$: Subject<string>
+interface State {
+  results: string[],
+  error?: string
+}
+
+function fetch (term: string) {
+  return from(axios
+    .get('https://en.wikipedia.org/w/api.php', {
+      params: {
+        action: 'opensearch',
+        format: 'json',
+        search: term,
+        origin: '*',
+      },
+    }))
+}
+
+class Search extends React.Component<Props, State> {
+  events: Subject<string>
   state: {
     results: string[],
     error?: string
@@ -18,47 +35,37 @@ class Search extends React.Component<Props> {
   constructor (props: Props) {
     super(props)
 
-    this.event$ = new Subject<string>()
     this.state = {
-      results: []
+      results: [],
     }
+
+    this.events = new Subject<string>()
 
     this.onChange = (searchTerm: string) => {
-      this.event$.next(searchTerm)
+      this.events.next(searchTerm)
     }
 
-    this.event$.pipe(
-      filter(term => term.length > 2),
-      debounceTime(750),
-      distinctUntilChanged(),
-      mergeMap(term =>
-        from(axios
-          .get('https://en.wikipedia.org/w/api.php', {
-            params: {
-              action: 'opensearch',
-              format: 'json',
-              search: term,
-              origin: '*',
-            },
-          })).pipe(
-          map(response => response.data),
-        ),
-      ),
-    ).subscribe(
-      ([, articles]) => {
-        console.log(articles)
-        this.setState({
-          results: articles
-        })
-      },
-      error => {
-        console.error('error', error)
-        this.setState({
-          results: [],
-          error: error,
-        })
-      },
-    )
+    const debouncedSearchTerms = this.events
+      .pipe(
+        filter(value => value !== ' '),
+        debounceTime(500),
+        distinctUntilChanged(),
+        mergeMap(term =>
+          !!term
+            ? of(term)
+              .pipe(
+                mergeMap(fetch),
+                map(({ data: [first, results, ...tail] }) => results),
+              )
+            : of([]),
+        )
+      )
+
+    debouncedSearchTerms
+      .subscribe({
+        next: results => this.setState({ results }),
+        error: error => this.setState({ results: [], error }),
+      })
   }
 
   render () {
