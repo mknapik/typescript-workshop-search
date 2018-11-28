@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { from, Subject } from 'rxjs'
 import axios from 'axios'
-import { map, mergeMap } from 'rxjs/internal/operators'
+import { debounceTime, distinctUntilChanged, filter, map, mergeMap } from 'rxjs/internal/operators'
 
 interface Props {
   name: string
@@ -28,6 +28,9 @@ class Search extends React.Component<Props> {
     }
 
     this.event$.pipe(
+      filter(term => term.length > 2),
+      debounceTime(750),
+      distinctUntilChanged(),
       mergeMap(term =>
         from(axios
           .get('https://en.wikipedia.org/w/api.php', {
@@ -79,7 +82,7 @@ class Search extends React.Component<Props> {
           <ul id="results" />
           {
             results.map((result, index) => (
-              <li>{result}</li>
+              <li key={index}>{result}</li>
             ))
           }
         </div>
@@ -89,4 +92,3 @@ class Search extends React.Component<Props> {
 }
 
 export default Search
-
